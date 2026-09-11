@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Parkeerherinnering</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <h1>Parkeerherinnering</h1>
+
+    <div id="banner" class="banner hidden" role="alert"></div>
+
+    <section id="start-view">
+      <form id="park-form">
+        <label for="note">Notitie (optioneel)</label>
+        <textarea id="note" name="note" placeholder="bv. verdieping 3, blauwe pijl"></textarea>
+
+        <label for="photo">Foto (optioneel)</label>
+        <input type="file" id="photo" name="photo" accept="image/*" capture="environment">
+
+        <fieldset>
+          <legend>Timer</legend>
+          <label><input type="radio" name="preset" value="blue-zone" checked> Blauwe zone (2 uur)</label>
+          <label><input type="radio" name="preset" value="paid"> Betaald parkeren</label>
+          <label><input type="radio" name="preset" value="none"> Geen limiet</label>
+        </fieldset>
+
+        <div id="custom-minutes-wrap" class="hidden">
+          <label for="custom-minutes">Aantal minuten</label>
+          <input type="number" id="custom-minutes" min="1" step="1" value="60">
+        </div>
+
+        <button type="submit" id="park-button" class="primary-button">Ik parkeer hier</button>
+        <p id="park-error" class="error hidden"></p>
+      </form>
+
+      <section id="history-section" class="hidden">
+        <h2>Eerdere sessies</h2>
+        <ul id="history-list"></ul>
+      </section>
+    </section>
+
+    <section id="active-view" class="hidden">
+      <p id="active-note"></p>
+      <img id="active-photo" class="hidden" alt="Foto van parkeerplek">
+      <p id="active-remaining" class="remaining"></p>
+      <p class="ios-note">Let op: achtergrondmeldingen zijn op iOS Safari niet altijd betrouwbaar. Open de app om je resterende tijd te checken.</p>
+      <button id="navigate-button" class="primary-button">Navigeer terug</button>
+      <button id="done-button" class="secondary-button">Klaar / auto opgehaald</button>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
