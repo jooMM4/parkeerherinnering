@@ -1,8 +1,16 @@
 import { saveSession, getActiveSession, endActiveSession } from './db.js';
-import { PRESETS, calculateExpiryTimestamp, getRemainingMs, formatRemainingTime } from './lib/session-logic.js';
+import {
+  PRESETS,
+  WARNING_MINUTES_BEFORE,
+  calculateExpiryTimestamp,
+  getRemainingMs,
+  formatRemainingTime,
+  getNotificationDue,
+} from './lib/session-logic.js';
 
 const startView = document.getElementById('start-view');
 const activeView = document.getElementById('active-view');
+const banner = document.getElementById('banner');
 const parkForm = document.getElementById('park-form');
 const parkButton = document.getElementById('park-button');
 const parkError = document.getElementById('park-error');
@@ -19,6 +27,8 @@ let swRegistration = null;
 let currentSession = null;
 let countdownInterval = null;
 let currentPhotoUrl = null;
+let warningTimeoutId = null;
+let expiryTimeoutId = null;
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
@@ -50,6 +60,92 @@ function updateCustomMinutesVisibility() {
 
 presetRadios.forEach((radio) => radio.addEventListener('change', updateCustomMinutesVisibility));
 
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+    return Notification.permission;
+  }
+  return Notification.requestPermission();
+}
+
+async function fireNotification(title, body) {
+  if (swRegistration && swRegistration.showNotification) {
+    await swRegistration.showNotification(title, { body });
+  } else if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body });
+  }
+}
+
+function clearScheduledNotifications() {
+  if (warningTimeoutId) { clearTimeout(warningTimeoutId); warningTimeoutId = null; }
+  if (expiryTimeoutId) { clearTimeout(expiryTimeoutId); expiryTimeoutId = null; }
+}
+
+function scheduleNotifications(session) {
+  clearScheduledNotifications();
+  if (session.expiryTimestamp === null) return;
+
+  const now = Date.now();
+  const warningAt = session.expiryTimestamp - WARNING_MINUTES_BEFORE * 60 * 1000;
+
+  if (!session.notified10min && warningAt > now) {
+    warningTimeoutId = setTimeout(async () => {
+      await fireNotification('Je parkeertijd loopt bijna af', 'Nog 10 minuten voordat je parkeertijd verloopt.');
+      session.notified10min = true;
+      await saveSession(session);
+    }, warningAt - now);
+  }
+
+  if (!session.notifiedExpiry && session.expiryTimestamp > now) {
+    expiryTimeoutId = setTimeout(async () => {
+      await fireNotification('Je parkeertijd is verlopen', 'Tijd om je auto op te halen.');
+      session.notifiedExpiry = true;
+      await saveSession(session);
+      await checkNotificationsOnResume();
+    }, session.expiryTimestamp - now);
+  }
+}
+
+function showBanner(message) {
+  banner.textContent = message;
+  banner.classList.remove('hidden');
+}
+
+function hideBanner() {
+  banner.classList.add('hidden');
+  banner.textContent = '';
+}
+
+async function checkNotificationsOnResume() {
+  const active = await getActiveSession();
+  if (!active) {
+    hideBanner();
+    return;
+  }
+  const now = Date.now();
+  const due = getNotificationDue(active, now);
+  if (due === 'warning') {
+    await fireNotification('Je parkeertijd loopt bijna af', 'Nog 10 minuten voordat je parkeertijd verloopt.');
+    active.notified10min = true;
+    await saveSession(active);
+  } else if (due === 'expiry') {
+    await fireNotification('Je parkeertijd is verlopen', 'Tijd om je auto op te halen.');
+    active.notifiedExpiry = true;
+    await saveSession(active);
+  }
+  if (active.expiryTimestamp !== null && now >= active.expiryTimestamp) {
+    showBanner('Je parkeertijd is verlopen. Tik op "Navigeer terug" om je auto op te halen.');
+  } else {
+    hideBanner();
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    checkNotificationsOnResume();
+  }
+});
+
 parkForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   parkError.classList.add('hidden');
@@ -76,6 +172,7 @@ parkForm.addEventListener('submit', async (event) => {
       notifiedExpiry: false,
     };
 
+    await requestNotificationPermission();
     await saveSession(session);
     parkForm.reset();
     updateCustomMinutesVisibility();
@@ -108,6 +205,8 @@ function renderActiveSession(session) {
   updateRemainingDisplay();
   if (countdownInterval) clearInterval(countdownInterval);
   countdownInterval = setInterval(updateRemainingDisplay, 30000);
+
+  scheduleNotifications(session);
 }
 
 function updateRemainingDisplay() {
@@ -123,6 +222,8 @@ navigateButton.addEventListener('click', () => {
 });
 
 doneButton.addEventListener('click', async () => {
+  clearScheduledNotifications();
+  hideBanner();
   if (countdownInterval) {
     clearInterval(countdownInterval);
     countdownInterval = null;
@@ -141,6 +242,8 @@ async function renderApp() {
   } else {
     startView.classList.remove('hidden');
     activeView.classList.add('hidden');
+    clearScheduledNotifications();
+    hideBanner();
     if (countdownInterval) {
       clearInterval(countdownInterval);
       countdownInterval = null;
@@ -152,6 +255,7 @@ async function init() {
   swRegistration = await registerServiceWorker();
   updateCustomMinutesVisibility();
   await renderApp();
+  await checkNotificationsOnResume();
 }
 
 init();
