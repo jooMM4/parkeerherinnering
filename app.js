@@ -69,10 +69,14 @@ async function requestNotificationPermission() {
 }
 
 async function fireNotification(title, body) {
-  if (swRegistration && swRegistration.showNotification) {
-    await swRegistration.showNotification(title, { body });
-  } else if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, { body });
+  try {
+    if (swRegistration && swRegistration.showNotification) {
+      await swRegistration.showNotification(title, { body });
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body });
+    }
+  } catch (err) {
+    console.error('Notificatie tonen mislukt:', err);
   }
 }
 
