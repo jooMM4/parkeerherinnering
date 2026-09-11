@@ -90,3 +90,13 @@ test('getNotificationDue: no-limit session never due', () => {
   const session = { expiryTimestamp: null, notified10min: false, notifiedExpiry: false };
   assert.equal(getNotificationDue(session, Date.now()), null);
 });
+
+test('getNotificationDue: does not fall through to warning after expiry has fired (short paid session)', () => {
+  // Regression for: a paid session shorter than the 10-minute warning window never
+  // schedules a warning timer, so notified10min stays false forever while notifiedExpiry
+  // becomes true. Once expiry has passed, this must return null, never 'warning'.
+  const expiryTimestamp = 1000000;
+  const session = { expiryTimestamp, notified10min: false, notifiedExpiry: true };
+  const now = expiryTimestamp + 60 * 60 * 1000; // well past expiry
+  assert.equal(getNotificationDue(session, now), null);
+});

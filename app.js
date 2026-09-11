@@ -18,6 +18,7 @@ const presetRadios = parkForm.querySelectorAll('input[name="preset"]');
 const customMinutesWrap = document.getElementById('custom-minutes-wrap');
 const customMinutesInput = document.getElementById('custom-minutes');
 const activeNote = document.getElementById('active-note');
+const activeCoords = document.getElementById('active-coords');
 const activePhoto = document.getElementById('active-photo');
 const activeRemaining = document.getElementById('active-remaining');
 const navigateButton = document.getElementById('navigate-button');
@@ -106,8 +107,9 @@ function scheduleNotifications(session) {
     expiryTimeoutId = setTimeout(async () => {
       await fireNotification('Je parkeertijd is verlopen', 'Tijd om je auto op te halen.');
       session.notifiedExpiry = true;
+      session.notified10min = true;
       await saveSession(session);
-      await checkNotificationsOnResume();
+      checkNotificationsOnResume().catch(console.error);
     }, session.expiryTimestamp - now);
   }
 }
@@ -123,23 +125,34 @@ function hideBanner() {
 }
 
 async function checkNotificationsOnResume() {
-  const active = await getActiveSession();
+  let active;
+  try {
+    active = await getActiveSession();
+  } catch (err) {
+    console.error('Actieve sessie ophalen mislukt:', err);
+    return;
+  }
   if (!active) {
     hideBanner();
     return;
   }
-  const now = Date.now();
-  const due = getNotificationDue(active, now);
-  if (due === 'warning') {
-    await fireNotification('Je parkeertijd loopt bijna af', 'Nog 10 minuten voordat je parkeertijd verloopt.');
-    active.notified10min = true;
-    await saveSession(active);
-  } else if (due === 'expiry') {
-    await fireNotification('Je parkeertijd is verlopen', 'Tijd om je auto op te halen.');
-    active.notifiedExpiry = true;
-    await saveSession(active);
+  try {
+    const now = Date.now();
+    const due = getNotificationDue(active, now);
+    if (due === 'warning') {
+      await fireNotification('Je parkeertijd loopt bijna af', 'Nog 10 minuten voordat je parkeertijd verloopt.');
+      active.notified10min = true;
+      await saveSession(active);
+    } else if (due === 'expiry') {
+      await fireNotification('Je parkeertijd is verlopen', 'Tijd om je auto op te halen.');
+      active.notifiedExpiry = true;
+      active.notified10min = true;
+      await saveSession(active);
+    }
+  } catch (err) {
+    console.error('Notificatie verwerken/opslaan mislukt:', err);
   }
-  if (active.expiryTimestamp !== null && now >= active.expiryTimestamp) {
+  if (active.expiryTimestamp !== null && Date.now() >= active.expiryTimestamp) {
     showBanner('Je parkeertijd is verlopen. Tik op "Navigeer terug" om je auto op te halen.');
   } else {
     hideBanner();
@@ -148,7 +161,7 @@ async function checkNotificationsOnResume() {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    checkNotificationsOnResume();
+    checkNotificationsOnResume().catch(console.error);
   }
 });
 
@@ -185,7 +198,16 @@ parkForm.addEventListener('submit', async (event) => {
     await renderApp();
   } catch (err) {
     console.error(err);
-    parkError.textContent = err.message || 'Er ging iets mis bij het opslaan van je parkeersessie.';
+    let message = 'Er ging iets mis bij het opslaan van je parkeersessie.';
+    if (err && typeof err.code === 'number' && err.code >= 1 && err.code <= 3 && 'PERMISSION_DENIED' in err) {
+      // GeolocationPositionError: duck-typed since instanceof isn't reliable across browsers/automation.
+      if (err.code === err.PERMISSION_DENIED) message = 'Locatietoegang geweigerd. Sta locatietoegang toe om te kunnen parkeren.';
+      else if (err.code === err.POSITION_UNAVAILABLE) message = 'Locatie kon niet worden bepaald. Probeer het opnieuw.';
+      else if (err.code === err.TIMEOUT) message = 'Het ophalen van je locatie duurde te lang. Probeer het opnieuw.';
+    } else if (err && err.message && err.message.includes('customMinutes')) {
+      message = 'Vul een geldig aantal minuten in (groter dan 0).';
+    }
+    parkError.textContent = message;
     parkError.classList.remove('hidden');
   } finally {
     parkButton.disabled = false;
@@ -195,6 +217,7 @@ parkForm.addEventListener('submit', async (event) => {
 function renderActiveSession(session) {
   currentSession = session;
   activeNote.textContent = session.note || '(geen notitie)';
+  activeCoords.textContent = `${session.lat.toFixed(5)}, ${session.lng.toFixed(5)}`;
 
   if (currentPhotoUrl) {
     URL.revokeObjectURL(currentPhotoUrl);
@@ -258,7 +281,8 @@ async function renderHistory() {
     const li = document.createElement('li');
     const when = formatHistoryTimestamp(session.timestamp);
     const noteText = session.note ? ` — ${session.note}` : '';
-    li.textContent = `${when}${noteText}`;
+    const coordsText = ` — ${session.lat.toFixed(5)}, ${session.lng.toFixed(5)}`;
+    li.textContent = `${when}${noteText}${coordsText}`;
     historyList.appendChild(li);
   });
 }
@@ -289,4 +313,8 @@ async function init() {
   await checkNotificationsOnResume();
 }
 
-init();
+init().catch((err) => {
+  console.error('App initialisatie mislukt:', err);
+  parkError.textContent = 'Opslag niet beschikbaar — je sessie kon niet geladen worden.';
+  parkError.classList.remove('hidden');
+});
