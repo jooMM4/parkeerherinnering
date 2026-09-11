@@ -1,4 +1,4 @@
-import { saveSession, getActiveSession, endActiveSession } from './db.js';
+import { saveSession, getActiveSession, getHistory, endActiveSession } from './db.js';
 import {
   PRESETS,
   WARNING_MINUTES_BEFORE,
@@ -22,6 +22,8 @@ const activePhoto = document.getElementById('active-photo');
 const activeRemaining = document.getElementById('active-remaining');
 const navigateButton = document.getElementById('navigate-button');
 const doneButton = document.getElementById('done-button');
+const historySection = document.getElementById('history-section');
+const historyList = document.getElementById('history-list');
 
 let swRegistration = null;
 let currentSession = null;
@@ -237,6 +239,30 @@ doneButton.addEventListener('click', async () => {
   await renderApp();
 });
 
+function formatHistoryTimestamp(ts) {
+  return new Date(ts).toLocaleString('nl-BE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+async function renderHistory() {
+  const history = await getHistory();
+  historyList.innerHTML = '';
+  if (history.length === 0) {
+    historySection.classList.add('hidden');
+    return;
+  }
+  historySection.classList.remove('hidden');
+  history.forEach((session) => {
+    const li = document.createElement('li');
+    const when = formatHistoryTimestamp(session.timestamp);
+    const noteText = session.note ? ` — ${session.note}` : '';
+    li.textContent = `${when}${noteText}`;
+    historyList.appendChild(li);
+  });
+}
+
 async function renderApp() {
   const active = await getActiveSession();
   if (active) {
@@ -252,6 +278,7 @@ async function renderApp() {
       clearInterval(countdownInterval);
       countdownInterval = null;
     }
+    await renderHistory();
   }
 }
 
