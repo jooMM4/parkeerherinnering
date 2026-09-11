@@ -1,5 +1,5 @@
-import { saveSession, getActiveSession } from './db.js';
-import { PRESETS, calculateExpiryTimestamp } from './lib/session-logic.js';
+import { saveSession, getActiveSession, endActiveSession } from './db.js';
+import { PRESETS, calculateExpiryTimestamp, getRemainingMs, formatRemainingTime } from './lib/session-logic.js';
 
 const startView = document.getElementById('start-view');
 const activeView = document.getElementById('active-view');
@@ -9,8 +9,16 @@ const parkError = document.getElementById('park-error');
 const presetRadios = parkForm.querySelectorAll('input[name="preset"]');
 const customMinutesWrap = document.getElementById('custom-minutes-wrap');
 const customMinutesInput = document.getElementById('custom-minutes');
+const activeNote = document.getElementById('active-note');
+const activePhoto = document.getElementById('active-photo');
+const activeRemaining = document.getElementById('active-remaining');
+const navigateButton = document.getElementById('navigate-button');
+const doneButton = document.getElementById('done-button');
 
 let swRegistration = null;
+let currentSession = null;
+let countdownInterval = null;
+let currentPhotoUrl = null;
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
@@ -81,14 +89,62 @@ parkForm.addEventListener('submit', async (event) => {
   }
 });
 
+function renderActiveSession(session) {
+  currentSession = session;
+  activeNote.textContent = session.note || '(geen notitie)';
+
+  if (currentPhotoUrl) {
+    URL.revokeObjectURL(currentPhotoUrl);
+    currentPhotoUrl = null;
+  }
+  if (session.photoBlob) {
+    currentPhotoUrl = URL.createObjectURL(session.photoBlob);
+    activePhoto.src = currentPhotoUrl;
+    activePhoto.classList.remove('hidden');
+  } else {
+    activePhoto.classList.add('hidden');
+  }
+
+  updateRemainingDisplay();
+  if (countdownInterval) clearInterval(countdownInterval);
+  countdownInterval = setInterval(updateRemainingDisplay, 30000);
+}
+
+function updateRemainingDisplay() {
+  if (!currentSession) return;
+  const remainingMs = getRemainingMs(currentSession.expiryTimestamp, Date.now());
+  activeRemaining.textContent = formatRemainingTime(remainingMs);
+}
+
+navigateButton.addEventListener('click', () => {
+  if (!currentSession) return;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${currentSession.lat},${currentSession.lng}`;
+  window.open(url, '_blank');
+});
+
+doneButton.addEventListener('click', async () => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+  await endActiveSession();
+  currentSession = null;
+  await renderApp();
+});
+
 async function renderApp() {
   const active = await getActiveSession();
   if (active) {
     startView.classList.add('hidden');
     activeView.classList.remove('hidden');
+    renderActiveSession(active);
   } else {
     startView.classList.remove('hidden');
     activeView.classList.add('hidden');
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
   }
 }
 
