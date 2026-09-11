@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.joodev.parkeerherinnering",
+        "sha256_cert_fingerprints": ["17:78:32:89:D7:58:70:E9:59:5F:89:26:4C:A2:2E:FF:53:3E:92:20:2B:99:98:40:3F:14:9E:1B:42:CD:3C:55"]
+      }
+    }]
